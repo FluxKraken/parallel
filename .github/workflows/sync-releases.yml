@@ -3,7 +3,7 @@ name: Sync GNU Parallel Releases
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 * * *"   # nightly
+    - cron: "0 3 * * *"   # nightly at 03:00 UTC
 
 permissions:
   contents: write
@@ -18,16 +18,23 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Authenticate gh
+      - name: Authenticate GitHub CLI
         run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
       - name: Sync tags to GitHub Releases
         run: |
           set -euo pipefail
 
+          echo "Fetching all tags"
+          git fetch --tags --force
+
+          echo "Getting existing GitHub releases"
           existing_releases=$(gh release list --limit 1000 --json tagName -q '.[].tagName')
 
-          for tag in $(git tag); do
+          echo "Processing GNU release tags"
+
+          # Only match 8-digit date tags (YYYYMMDD)
+          git tag | grep -E '^(19|20)[0-9]{6}$' | while read tag; do
             echo "Checking tag: $tag"
 
             if echo "$existing_releases" | grep -qx "$tag"; then
@@ -35,18 +42,19 @@ jobs:
               continue
             fi
 
-            version="$tag"
-            tarball="parallel-${version}.tar.bz2"
+            tarball="parallel-${tag}.tar.bz2"
             url="https://ftp.gnu.org/gnu/parallel/${tarball}"
 
-            echo "Fetching ${url}"
+            echo "Downloading $url"
+            curl -fLO "$url"
 
-            curl -fLO "${url}"
+            echo "Creating GitHub release for $tag"
+            gh release create "$tag" \
+              --title "$tag" \
+              --notes "Mirror of official GNU Parallel release $tag" \
+              "$tarball"
 
-            gh release create "${tag}" \
-              --title "${tag}" \
-              --notes "Mirror of official GNU Parallel release ${version}" \
-              "${tarball}"
-
-            rm -f "${tarball}"
+            rm -f "$tarball"
           done
+
+          echo "Sync complete"
