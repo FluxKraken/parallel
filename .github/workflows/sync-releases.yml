@@ -13,6 +13,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Authenticate GitHub CLI
         run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
@@ -21,9 +24,12 @@ jobs:
           set -euo pipefail
 
           echo "Fetching GNU release list"
+
           curl -s https://ftp.gnu.org/gnu/parallel/ \
             | grep -oE 'parallel-[0-9]{8}\.tar\.bz2' \
             | sort -u > versions.txt
+
+          echo "Getting existing GitHub releases"
 
           existing_releases=$(gh release list --limit 1000 --json tagName -q '.[].tagName')
 
@@ -43,6 +49,7 @@ jobs:
             curl -fLO "$url"
 
             echo "Creating GitHub release $version"
+
             gh release create "$version" \
               --title "$version" \
               --notes "Mirror of official GNU Parallel release $version" \
@@ -53,3 +60,5 @@ jobs:
           done < versions.txt
 
           rm -f versions.txt
+
+          echo "Sync complete"
