@@ -1,0 +1,64 @@
+name: Sync Savannah Tags → GitHub Releases
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"  # nightly at 03:00 UTC
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # we need all tags
+
+      - name: Fetch all tags
+        run: git fetch --tags --force
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Process tags
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+
+          # Get list of existing GitHub releases
+          existing_releases=$(gh release list --limit 1000 --json tagName -q '.[].tagName')
+
+          for tag in $(git tag); do
+            echo "Checking tag: $tag"
+
+            if echo "$existing_releases" | grep -qx "$tag"; then
+              echo "Release already exists for $tag"
+              continue
+            fi
+
+            echo "Creating release for $tag"
+
+            git checkout $tag
+
+            ./configure
+            make
+
+            mkdir -p dist
+            cp src/parallel dist/
+
+            tarball="parallel-${tag}-linux-x86_64.tar.gz"
+            tar -czf $tarball -C dist parallel
+
+            gh release create "$tag" \
+              --title "$tag" \
+              --notes "Mirror of GNU Parallel release $tag" \
+              "$tarball"
+
+          done
