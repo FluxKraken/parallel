@@ -3,7 +3,7 @@ name: Sync GNU Parallel Releases
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 * * *"   # nightly at 03:00 UTC
+    - cron: "0 3 * * *"
 
 permissions:
   contents: write
@@ -13,48 +13,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Authenticate GitHub CLI
         run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
-      - name: Sync tags to GitHub Releases
+      - name: Sync official GNU releases
         run: |
           set -euo pipefail
 
-          echo "Fetching all tags"
-          git fetch --tags --force
+          echo "Fetching GNU release list"
+          curl -s https://ftp.gnu.org/gnu/parallel/ \
+            | grep -oE 'parallel-[0-9]{8}\.tar\.bz2' \
+            | sort -u > versions.txt
 
-          echo "Getting existing GitHub releases"
           existing_releases=$(gh release list --limit 1000 --json tagName -q '.[].tagName')
 
-          echo "Processing GNU release tags"
+          while read tarball; do
+            version=$(echo "$tarball" | grep -oE '[0-9]{8}')
 
-          # Only match 8-digit date tags (YYYYMMDD)
-          git tag | grep -E '^(19|20)[0-9]{6}$' | while read tag; do
-            echo "Checking tag: $tag"
+            echo "Checking version: $version"
 
-            if echo "$existing_releases" | grep -qx "$tag"; then
-              echo "Release already exists for $tag"
+            if echo "$existing_releases" | grep -qx "$version"; then
+              echo "Release exists, skipping"
               continue
             fi
 
-            tarball="parallel-${tag}.tar.bz2"
             url="https://ftp.gnu.org/gnu/parallel/${tarball}"
 
             echo "Downloading $url"
             curl -fLO "$url"
 
-            echo "Creating GitHub release for $tag"
-            gh release create "$tag" \
-              --title "$tag" \
-              --notes "Mirror of official GNU Parallel release $tag" \
+            echo "Creating GitHub release $version"
+            gh release create "$version" \
+              --title "$version" \
+              --notes "Mirror of official GNU Parallel release $version" \
               "$tarball"
 
             rm -f "$tarball"
-          done
 
-          echo "Sync complete"
+          done < versions.txt
+
+          rm -f versions.txt
