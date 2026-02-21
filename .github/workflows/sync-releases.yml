@@ -35,7 +35,6 @@ jobs:
               continue
             fi
 
-            # GNU Parallel tags are date-based (YYYYMMDD)
             version="$tag"
             tarball="parallel-${version}.tar.bz2"
             url="https://ftp.gnu.org/gnu/parallel/${tarball}"
@@ -44,11 +43,10 @@ jobs:
 
             curl -fLO "${url}"
 
-            echo "Publishing GitHub release for ${tag}"
-
             gh release create "${tag}" \
               --title "${tag}" \
               --notes "Mirror of official GNU Parallel release ${version}" \
               "${tarball}"
 
             rm -f "${tarball}"
+          done
