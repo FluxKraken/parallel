@@ -1,9 +1,9 @@
-name: Sync Savannah Tags → GitHub Releases
+name: Sync GNU Parallel Releases
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 * * *"  # nightly at 03:00 UTC
+    - cron: "0 3 * * *"   # nightly
 
 permissions:
   contents: write
@@ -13,26 +13,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout main
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # we need all tags
+          fetch-depth: 0
 
-      - name: Fetch all tags
-        run: git fetch --tags --force
+      - name: Authenticate gh
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
-      - name: Install build dependencies
+      - name: Sync tags to GitHub Releases
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential
+          set -euo pipefail
 
-      - name: Process tags
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -e
-
-          # Get list of existing GitHub releases
           existing_releases=$(gh release list --limit 1000 --json tagName -q '.[].tagName')
 
           for tag in $(git tag); do
@@ -43,22 +35,20 @@ jobs:
               continue
             fi
 
-            echo "Creating release for $tag"
+            # GNU Parallel tags are date-based (YYYYMMDD)
+            version="$tag"
+            tarball="parallel-${version}.tar.bz2"
+            url="https://ftp.gnu.org/gnu/parallel/${tarball}"
 
-            git checkout $tag
+            echo "Fetching ${url}"
 
-            ./configure
-            make
+            curl -fLO "${url}"
 
-            mkdir -p dist
-            cp src/parallel dist/
+            echo "Publishing GitHub release for ${tag}"
 
-            tarball="parallel-${tag}-linux-x86_64.tar.gz"
-            tar -czf $tarball -C dist parallel
+            gh release create "${tag}" \
+              --title "${tag}" \
+              --notes "Mirror of official GNU Parallel release ${version}" \
+              "${tarball}"
 
-            gh release create "$tag" \
-              --title "$tag" \
-              --notes "Mirror of GNU Parallel release $tag" \
-              "$tarball"
-
-          done
+            rm -f "${tarball}"
